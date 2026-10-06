@@ -46,6 +46,7 @@ architecture rtl of i2c_master is
     signal sclk_r : std_logic;
     signal sdat_inout_r : std_logic;
     signal sdat_zen : std_logic;
+    signal sdat_in : std_logic; --Normalized sda input.
     signal sclk_counter_r : integer range 0 to sclk_divider_c;
     signal bit_counter_r : integer range 0 to byte_width_g;
 
@@ -55,6 +56,8 @@ architecture rtl of i2c_master is
     signal previous_state : state_type; --This is used when we need to return to our last state (for example if we got nack)
 
 begin
+
+    sdat_in <= to_X01(sdat_inout);
 
     --Generates the sclk, while trnasmittion is on.
     sclk_handler : process(clk, rst_n)
@@ -127,12 +130,12 @@ begin
             
                         if(sclk_r = '1') then
                             --Received ACK go forwards
-                            if(sdat_inout = '0') then
+                            if(sdat_in = '0') then
                                 byte_done_out <= '1';
                                 curr_state_r <= next_state;
 
                             --Received NACK transmit again
-                            elsif(sdat_inout = '1') then
+                            elsif(sdat_in = '1') then
                                 curr_state_r <= previous_state;
                             end if;
                         end if;
@@ -171,36 +174,37 @@ begin
                                 end if;
                             
                             else
-                                byte_out(bit_counter_r - 1) <= sdat_inout;
+                                byte_out(bit_counter_r - 1) <= sdat_in;
                                 bit_counter_r <= bit_counter_r - 1;
                             end if;
                         end if;
 
                     when send_ack =>
                             sdat_zen <= '0';
+                            sdat_inout_r <= '0';
                             if(sclk_r = '0') then
-                                sdat_inout_r <= '0';
                                 curr_state_r <= previous_state;
                                 byte_done_out <= '1';    
                                 sdat_zen <= '1';
                             end if;
                     
                     when send_nack =>
-                            sdat_zen <= '0';
+                            sdat_zen <= '1';
+                            sdat_inout_r <= '1';
                             if(sclk_r = '0') then
-                                sdat_inout_r <= '1';
                                 curr_state_r <= end_state;
                                 byte_done_out <= '1';
                             end if;
 
                     when end_state =>
                         --End transmittion.
-                        sdat_zen <= '0';
                         byte_done_out <= '0';
                         if(sclk_r = '1') then
+                            sdat_zen <= '1';
                             sdat_inout_r <= '1';
                             curr_state_r <= idle;
                         else
+                            sdat_zen <= '0';
                             sdat_inout_r <= '0';
                         end if;
                     end case;
@@ -208,6 +212,8 @@ begin
         end if;
     end process fsm_process;
 
-    sdat_inout <= sdat_inout_r when sdat_zen = '0' else 'Z';
+    sdat_inout <= '0' 
+        when (sdat_zen = '0' and sdat_inout_r = '0')
+        else 'Z';
 
 end rtl;
