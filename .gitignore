@@ -10,3 +10,5 @@
 
 #Keep VHDL sources
 !/vhd/
+
+__pycache__/
