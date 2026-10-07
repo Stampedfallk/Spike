@@ -255,7 +255,7 @@ async def test_i2c_master_random_write(dut):
     )  
 
 @cocotb.test()
-async def teste_i2c_master_read(dut):
+async def test_i2c_master_read(dut):
 
     #Test values:
 
@@ -397,3 +397,150 @@ async def teste_i2c_master_read(dut):
     dut._log.info(
     "I2C read test completed successfully"
     )
+
+@cocotb.test()
+async def test_i2c_master_read_random(dut):
+
+    #Try to receive 10 bytes
+    NUM_BYTES = 10
+
+    #How many nacks we send before sending the ack
+    NUM_NACKS = 4
+
+    #Start reference clock
+    cocotb.start_soon(
+        Clock(dut.clk, 100, unit="ns").start()
+    )
+
+    #Initial values¨
+    dut.rst_n.value = 0
+    dut.start_in.value = 0
+    dut.end_in.value = 0
+    dut.byte_in.value = 0
+    dut.slave_sda_drive_low_in.value = 0
+
+    for _ in range(5):
+        await RisingEdge(dut.clk)
+
+    dut.rst_n.value = 1
+
+    for _ in range(2):
+        await RisingEdge(dut.clk)
+
+    #Generate the random bytes This will be received by the master
+    test_bytes = [
+        random.randint(0,225)
+        for _ in range(NUM_BYTES)
+    ]
+
+    #The deivece address
+    i2c_addr = 0x81 #(10000001)
+
+    dut.byte_in.value = i2c_addr
+    dut.start_in.value = 1
+
+    await RisingEdge(dut.clk)
+
+    dut.start_in.value = 0
+
+    await FallingEdge(dut.sdat_out)
+
+    nack_index = 0
+
+    while nack_index <= NUM_NACKS:
+
+        received = 0
+        for _ in range(8):
+            await RisingEdge(dut.sclk_out)
+            bit = int(dut.sdat_out.value)
+            received = (received << 1) | bit
+
+        dut._log.info(
+            f"expected=0x{i2c_addr:02X}, "
+            f"receivedf=0x{received:02X}"
+        )
+
+        assert received == i2c_addr, (
+            f"expected=0x{i2c_addr:02X}, "
+            f"receivedf=0x{received:02X}"            
+        )
+
+        #Send nack
+        await FallingEdge(dut.sclk_out)
+
+        #If the amount of nacks has been reached send ack
+        if nack_index == NUM_NACKS:
+            dut.slave_sda_drive_low_in.value = 1
+            dut._log.info(f"Sending ACK")
+
+        else:
+            dut.slave_sda_drive_low_in.value = 0
+            dut._log.info(f"Sending NACK: {nack_index}")
+
+        await RisingEdge(dut.sclk_out)
+        await FallingEdge(dut.sclk_out)
+
+        dut.slave_sda_drive_low_in.value = 0
+
+        nack_index += 1
+
+    byte_index = 0
+
+    #Sending the bytes
+    while byte_index < NUM_BYTES:
+
+        if byte_index == NUM_BYTES - 1:
+            dut._log.info(f"Lifting end_in")
+            dut.end_in.value = 1
+
+
+        data_bits = [
+            (test_bytes[byte_index] >> bit) & 1
+            for bit in range(7,-1,-1)
+        ]
+
+        for i, bit in enumerate(data_bits):
+            if bit == 0:
+                dut.slave_sda_drive_low_in.value = 1
+            else:
+                dut.slave_sda_drive_low_in.value = 0
+
+            await RisingEdge(dut.sclk_out)
+            await FallingEdge(dut.sclk_out)
+
+        #Releasing the sda for nack/ack
+        dut.slave_sda_drive_low_in.value = 0
+
+        assert int(dut.byte_out.value) == test_bytes[byte_index], (
+            f"Expected master byte_out = 0x{test_bytes[byte_index]:02X}, "
+            f"got 0x{int(dut.byte_out.value):02X}"
+        )
+
+        dut._log.info(
+        f"Master received 0x{int(dut.byte_out.value):02X}"
+        )
+
+        await RisingEdge(dut.sclk_out)
+
+        sda = str(dut.sdat_out.value)
+        dut._log.info(
+        f"Master ACK/NACK bit: SDA={sda}"
+        )
+
+        await FallingEdge(dut.sclk_out)
+
+        byte_index += 1
+        dut._log.info(f"byte index incremented. It is now {byte_index}")
+
+    dut.end_in.value = 0
+
+    await wait_for_stop(dut)
+    dut._log.info("I2C STOP detected")
+    dut.end_in.value = 0
+    dut._log.info(
+        "I2C read random data test completed succesfully"
+    )
+
+
+
+    

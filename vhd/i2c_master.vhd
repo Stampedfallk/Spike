@@ -165,7 +165,7 @@ begin
                         
                         byte_done_out <= '0';
                         previous_state <= receive_byte;
-                        if(sclk_r = '0') then
+                        if(sclk_r = '1') then
                             if(bit_counter_r = 0) then
                                 if(end_in = '1') then
                                     curr_state_r <= send_nack; --If last byte was received, send nack and end transmittion.
@@ -186,7 +186,9 @@ begin
                                 curr_state_r <= previous_state;
                                 byte_done_out <= '1';    
                                 sdat_zen <= '1';
+                                sdat_inout_r <= '1';
                             end if;
+                            bit_counter_r <= byte_width_g;
                     
                     when send_nack =>
                             sdat_zen <= '1';
@@ -197,6 +199,7 @@ begin
                                 sdat_zen <= '0';
                                 sdat_inout_r <= '0';
                             end if;
+                            bit_counter_r <= byte_width_g;
 
                     when end_state =>
                         --End transmittion.
