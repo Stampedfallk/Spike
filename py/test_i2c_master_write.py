@@ -5,7 +5,7 @@
 -------------------------------------------------------------------------------
 -- File       : test_i2c_master_write.py
 -- Author     : Jere Nissinen
--- Edited     : 5.10.2026
+-- Edited     : 7.10.2026
 -------------------------------------------------------------------------------
 -- Description: A write test for the i2c_master. This test writes 1 address byte and 1 data byte
 -- through the i2c_master and checks that it outputs them correctly.
@@ -16,6 +16,14 @@ import random
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, FallingEdge, ValueChange
+
+async def wait_for_stop(dut):
+    while True:
+        await ValueChange(dut.sdat_out)
+        sda = str(dut.sdat_out.value)
+        scl = str(dut.sclk_out.value)
+        if sda in ("1", "H") and scl in ("1", "H"):
+            return
 
 @cocotb.test()
 async def test_i2c_master_write(dut):
@@ -245,3 +253,147 @@ async def test_i2c_master_random_write(dut):
     dut._log.info(
         f"Succesfully transmitted {NUM_BYTES} randomized bytes"
     )  
+
+@cocotb.test()
+async def teste_i2c_master_read(dut):
+
+    #Test values:
+
+    #7-bit address + R bit
+    i2c_addr = 0x81 #(10000001)
+
+    #Slave sends this byte
+    slave_data = 0xAA
+
+    data_bits = [
+        (slave_data >> bit) & 1
+        for bit in range(7,-1,-1)
+    ]
+
+    cocotb.start_soon(Clock(dut.clk, 100, unit="ns").start())
+
+    dut.rst_n.value = 0
+    dut.start_in.value = 0
+    dut.end_in.value = 0
+    dut.byte_in.value = 0
+    dut.slave_sda_drive_low_in.value = 0
+
+    for _ in range(5):
+        await RisingEdge(dut.clk)
+
+    # Release reset
+    dut.rst_n.value = 1
+    for _ in range(2):
+        await RisingEdge(dut.clk)    
+
+    dut.byte_in.value = i2c_addr
+    dut.start_in.value = 1
+
+    await RisingEdge(dut.clk)
+
+    dut.start_in.value = 0
+
+    await FallingEdge(dut.sdat_out)
+
+    received_addr = 0
+
+    for _ in range(8):
+        await RisingEdge(dut.sclk_out)
+
+        sda = str(dut.sdat_out.value)
+        if sda in ("1", "H"):
+            bit = 1
+        else:
+            bit = 0
+
+        received_addr = (received_addr << 1) | bit
+
+    dut._log.info(
+        f"Address received from master: 0x{received_addr:02X}"
+    )
+
+    assert received_addr == i2c_addr, (
+        f"Expected address 0x{i2c_addr:02X}, "
+        f"got 0x{received_addr:02X}"
+    )
+
+
+    await FallingEdge(dut.sclk_out)
+
+    # Pull SDA low
+
+    dut.slave_sda_drive_low_in.value = 1
+
+    dut._log.info("Slave ACK address")
+
+    # ACK clock pulse
+
+    await RisingEdge(dut.sclk_out)
+
+    await FallingEdge(dut.sclk_out)
+    # Release SDA again
+
+    dut.slave_sda_drive_low_in.value = 0    
+
+    #Receiving only one data byte
+    dut.end_in.value = 1
+
+    for i, bit in enumerate(data_bits):
+
+        if bit == 0:
+            dut.slave_sda_drive_low_in.value = 1
+        else:
+            dut.slave_sda_drive_low_in.value = 0
+
+        dut._log.info(
+            f"Sending bt {i}: {bit}"
+        )
+
+        #Dut should sample the bit here
+        await RisingEdge(dut.sclk_out)
+        await FallingEdge(dut.sclk_out)
+
+    #Slave releases SDA after complete byte for master to send ack/nack (nack expected)
+    dut.slave_sda_drive_low_in.value = 0
+
+    assert int(dut.byte_out.value) == slave_data, (
+        f"Expected master byte_out = 0x{slave_data:02X}, "
+        f"got 0x{int(dut.byte_out.value):02X}"
+    )
+
+    dut._log.info(
+    f"Master received 0x{int(dut.byte_out.value):02X}"
+    )
+
+    await RisingEdge(dut.sclk_out)
+
+    sda = str(dut.sdat_out.value)
+
+    dut._log.info(
+        f"Master ACK/NACK bit: SDA={sda}"
+    )
+
+    assert sda in ("1", "H"), (
+    f"Expected master NACK after final byte, "
+    f"but SDA was {sda}"
+    )
+
+    await FallingEdge(dut.sclk_out)
+
+    if dut.byte_done_out.value == 0:
+        await RisingEdge(dut.byte_done_out)
+
+    dut._log.info("byte_done_out detected")
+
+
+    # ---------------------------------------------------------
+    # Check STOP
+    # ---------------------------------------------------------
+
+
+    await wait_for_stop(dut)
+    dut._log.info("I2C STOP detected")
+    dut.end_in.value = 0
+    dut._log.info(
+    "I2C read test completed successfully"
+    )

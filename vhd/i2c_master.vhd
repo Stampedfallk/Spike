@@ -194,6 +194,8 @@ begin
                             if(sclk_r = '0') then
                                 curr_state_r <= end_state;
                                 byte_done_out <= '1';
+                                sdat_zen <= '0';
+                                sdat_inout_r <= '0';
                             end if;
 
                     when end_state =>
