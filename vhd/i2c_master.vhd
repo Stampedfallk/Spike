@@ -44,6 +44,7 @@ architecture rtl of i2c_master is
     constant sclk_half_c : integer := sclk_divider_c/2;
 
     signal sclk_r : std_logic;
+    signal sclk_previous_r :std_logic;
     signal sdat_inout_r : std_logic;
     signal sdat_zen : std_logic;
     signal sdat_in : std_logic; --Normalized sda input.
@@ -64,16 +65,16 @@ begin
     begin
         if(rst_n = '0') then
             sclk_r <= '1';
+            sclk_previous_r <= '1';
             sclk_counter_r <= 0;
 
         elsif(clk'event and clk='1') then
+            sclk_previous_r <= sclk_r;
             if(sclk_counter_r = sclk_divider_c) then
                 sclk_r <= not sclk_r;
                 sclk_counter_r <= 0;
             elsif(curr_state_r /= idle) then
                 sclk_counter_r <= sclk_counter_r + 1;
-            elsif(curr_state_r = idle) then
-                sclk_counter_r <= sclk_half_c;
             end if;
         end if;
     end process sclk_handler;
@@ -94,126 +95,115 @@ begin
             byte_out <= (others => '0');
 
         elsif(clk'event and clk='1') then
+            case curr_state_r is
 
-            if(sclk_counter_r = sclk_half_c) then
+                when idle =>
+                    --Transimttion started condition
+                    if(start_in = '1') then
+                        sdat_inout_r <= '0';
+                        curr_state_r <= transmit_address;
+                    end if;
 
-                case curr_state_r is
+                when transmit_address =>
+                    --First transmit the i2c address and then determine the next actions from r/w bit
+                    sdat_zen <= '0';
+                    previous_state <= transmit_address;
+                    if(sclk_r = '0' and sclk_counter_r = sclk_half_c) then --Transmit bit while sclk is low and not on edge
+                        sdat_inout_r <= byte_in(bit_counter_r-1);
+                        bit_counter_r <= bit_counter_r - 1;
+                    end if;
+
+                    if(sclk_r = '0' and sclk_previous_r = '1' and bit_counter_r = 0) then --Move to next state on lowering sclk and all bits are transmitted
+                        if(sdat_inout_r = '0') then --Determine if we are reading or writing
+                            next_state <= transmit_byte;
+                        elsif(sdat_inout_r = '1') then
+                            next_state <= receive_byte;
+                        end if;
+
+                        curr_state_r <= wait_ack;
+                        sdat_zen <= '1';
+                    end if;
+
+                when wait_ack =>
+                    if(sclk_r = '1' and sclk_counter_r = sclk_half_c) then --Read the ack on the rising edge
+                        if(sdat_in = '0') then --got ack
+                            byte_done_out <= '1';
+                            curr_state_r <= next_state;
+                        
+                        elsif(sdat_in = '1') then --got nack
+                            curr_state_r <= previous_state;
+                        end if;
+                    end if;
+                    bit_counter_r <= byte_width_g;
                     
-                    when idle =>
-                        --Transmittion started, do the start condition
-                        if(start_in = '1') then
+
+                when transmit_byte =>
+                    byte_done_out <= '0';
+                    sdat_zen <= '0';
+                    previous_state <= transmit_byte;
+                    if(sclk_r = '0' and sclk_counter_r = sclk_half_c) then --Transmit bit while sclk is low and not on edge
+                        sdat_inout_r <= byte_in(bit_counter_r-1);
+                        bit_counter_r <= bit_counter_r - 1;
+                    end if;
+
+                    if(sclk_r = '0' and sclk_previous_r = '1' and bit_counter_r = 0) then --Move to next state on lowering sclk and all bits are transmitted
+                        if(end_in = '1') then --This was the last byte so moving on
+                            next_state <= end_state;
+                        else
+                            next_state <= transmit_byte;
+                        end if;
+
+                        curr_state_r <= wait_ack;
+                        sdat_zen <= '1';
+                    end if;  
+                    
+                when receive_byte =>
+                    byte_done_out <= '0';
+                    previous_state <= receive_byte;
+                    if(sclk_r = '0' and sclk_previous_r = '1' and bit_counter_r = 0) then --Determine the next actions
+                        if(end_in = '1') then --If communication ends, then send nack 
+                            sdat_zen <= '1';
+                            sdat_inout_r <= '1';
+                            curr_state_r <= send_nack;
+                        else
+                            sdat_zen <= '0'; --Put sdat down for ack
                             sdat_inout_r <= '0';
-                            curr_state_r <= transmit_address;
-                        end if;
-                    
-                    when transmit_address =>
-                        --First transmit the i2c address and determine the next actions from the R/W bit
-                        sdat_zen <= '0';
-                        previous_state <= transmit_address;
-                        if(sclk_r = '0') then --Change the data while sclk is low
-                            sdat_inout_r <= byte_in(bit_counter_r - 1);
-                            bit_counter_r <= bit_counter_r - 1;
-                        end if;
-
-                        if(sclk_r = '1' and bit_counter_r = 0) then --Move to next state while sclk is high
-                            if(sdat_inout_r = '0') then
-                                next_state <= transmit_byte; --If it was the last byte, end transmittion
-                            elsif(sdat_inout_r = '1') then
-                                next_state <= receive_byte;
-                            end if;
-
-                            curr_state_r <= wait_ack;
-                            sdat_zen <= '1';                            
-                        end if;
-
-                    when wait_ack =>
-            
-                        if(sclk_r = '1') then
-                            --Received ACK go forwards
-                            if(sdat_in = '0') then
-                                byte_done_out <= '1';
-                                curr_state_r <= next_state;
-
-                            --Received NACK transmit again
-                            elsif(sdat_in = '1') then
-                                curr_state_r <= previous_state;
-                            end if;
+                            curr_state_r <= send_ack;
                         end if;
                         bit_counter_r <= byte_width_g;
+                    end if;
 
-                    when transmit_byte =>
-                        --Transmit a generic byte (not address)
-                        byte_done_out <= '0';    
-                        sdat_zen <= '0';
-                        previous_state <= transmit_byte;
-                        if(sclk_r = '0') then --Change the data while sclk is low
-                            sdat_inout_r <= byte_in(bit_counter_r - 1);
-                            bit_counter_r <= bit_counter_r - 1;
-                        end if;
+                    if(sclk_r = '1' and sclk_previous_r = '0') then --Read sdat on rising edge and update output
+                        byte_out(bit_counter_r - 1) <= sdat_in;
+                        bit_counter_r <= bit_counter_r - 1;
+                    end if;
 
-                        if(sclk_r = '1' and bit_counter_r = 0) then --Move to next state while sclk is high
-                            if(end_in = '1') then
-                                next_state <= end_state; --If it was the last byte, end transmittion
-                            else
-                                next_state <= transmit_byte;
-                            end if;
+                when send_ack => --Hold sdat down and release it after a cycle.
+                    if(sclk_r = '0' and sclk_previous_r = '1') then
+                        curr_state_r <= previous_state;
+                        byte_done_out <= '1';
+                        sdat_zen <= '1';
+                    end if;
 
-                            curr_state_r <= wait_ack;
-                            sdat_zen <= '1';                            
-                        end if;
-                    when receive_byte => 
-                        
-                        byte_done_out <= '0';
-                        previous_state <= receive_byte;
-                        if(sclk_r = '1') then
-                            if(bit_counter_r = 0) then
-                                if(end_in = '1') then
-                                    curr_state_r <= send_nack; --If last byte was received, send nack and end transmittion.
-                                else
-                                    curr_state_r <= send_ack;
-                                end if;
-                            
-                            else
-                                byte_out(bit_counter_r - 1) <= sdat_in;
-                                bit_counter_r <= bit_counter_r - 1;
-                            end if;
-                        end if;
+                when send_nack => --Send the final nack
+                    if(sclk_r = '0' and sclk_previous_r = '1') then
+                        curr_state_r <= end_state;
+                        byte_done_out <= '1';
+                        sdat_zen <= '1';
+                        sdat_inout_r <= '1';
+                    end if;
+                
+                when end_state => --Perform the end condition
+                    byte_done_out <= '0';
+                    sdat_zen <= '0';
+                    sdat_inout_r <= '0';
+                    if(sclk_r = '1' and sclk_counter_r = sclk_half_c) then
+                        sdat_zen <= '1';
+                        sdat_inout_r <= '1';
+                        curr_state_r <= idle;
+                    end if;
+                end case;        
 
-                    when send_ack =>
-                            sdat_zen <= '0';
-                            sdat_inout_r <= '0';
-                            if(sclk_r = '0') then
-                                curr_state_r <= previous_state;
-                                byte_done_out <= '1';    
-                                sdat_zen <= '1';
-                                sdat_inout_r <= '1';
-                            end if;
-                            bit_counter_r <= byte_width_g;
-                    
-                    when send_nack =>
-                            sdat_zen <= '1';
-                            sdat_inout_r <= '1';
-                            if(sclk_r = '0') then
-                                curr_state_r <= end_state;
-                                byte_done_out <= '1';
-                                sdat_zen <= '0';
-                                sdat_inout_r <= '0';
-                            end if;
-                            bit_counter_r <= byte_width_g;
-
-                    when end_state =>
-                        --End transmittion.
-                        byte_done_out <= '0';
-                        if(sclk_r = '1') then
-                            sdat_zen <= '1';
-                            sdat_inout_r <= '1';
-                            curr_state_r <= idle;
-                        else
-                            sdat_zen <= '0';
-                            sdat_inout_r <= '0';
-                        end if;
-                    end case;
-            end if;
         end if;
     end process fsm_process;
 

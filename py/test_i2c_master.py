@@ -3,12 +3,11 @@
 -- Title      : i2c master write test
 -- Project    : Spike
 -------------------------------------------------------------------------------
--- File       : test_i2c_master_write.py
+-- File       : test_i2c_master.py
 -- Author     : Jere Nissinen
--- Edited     : 7.10.2026
+-- Edited     : 10.10.2026
 -------------------------------------------------------------------------------
--- Description: A write test for the i2c_master. This test writes 1 address byte and 1 data byte
--- through the i2c_master and checks that it outputs them correctly.
+-- Description: Containts the test sequences for the I2C_master
 -------------------------------------------------------------------------------
 '''
 import random
@@ -17,14 +16,24 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, FallingEdge, ValueChange
 
+#Helper function for detecting i2c end condition.
 async def wait_for_stop(dut):
     while True:
-        await ValueChange(dut.sdat_out)
+        await ValueChange(dut.sdat_out) #Check that end condition happens correctly
         sda = str(dut.sdat_out.value)
         scl = str(dut.sclk_out.value)
         if sda in ("1", "H") and scl in ("1", "H"):
             return
 
+"""
+Tests Sends 1 address byte and 1 data byte through the master.
+
+Verifies:
+- Address transmittion
+- Data byte transmittion
+- ACK handling
+- Stop condition
+"""
 @cocotb.test()
 async def test_i2c_master_write(dut):
 
@@ -146,6 +155,17 @@ async def test_i2c_master_write(dut):
     for _ in range(10):
         await RisingEdge(dut.clk)
 
+
+
+"""
+Tests I2C write operation using randomized data.
+
+Verifies:
+- Multiple consecutive byte transfers
+- Random data values
+- ACK handling
+- NACK handling and retransmission
+"""
 @cocotb.test()
 async def test_i2c_master_random_write(dut):
 
@@ -254,6 +274,16 @@ async def test_i2c_master_random_write(dut):
         f"Succesfully transmitted {NUM_BYTES} randomized bytes"
     )  
 
+"""
+Tests a basic I2C read transaction.
+
+Verifies:
+- Read address transmission
+- Address ACK
+- Data reception
+- Master NACK after the final byte
+- STOP condition
+"""
 @cocotb.test()
 async def test_i2c_master_read(dut):
 
@@ -385,12 +415,6 @@ async def test_i2c_master_read(dut):
 
     dut._log.info("byte_done_out detected")
 
-
-    # ---------------------------------------------------------
-    # Check STOP
-    # ---------------------------------------------------------
-
-
     await wait_for_stop(dut)
     dut._log.info("I2C STOP detected")
     dut.end_in.value = 0
@@ -398,6 +422,17 @@ async def test_i2c_master_read(dut):
     "I2C read test completed successfully"
     )
 
+
+"""
+Tests I2C read operation using randomized data.
+
+Verifies:
+- Address NACK handling and retransmission
+- Multiple consecutive byte receptions
+- Random data values
+- Master ACK/NACK behavior
+- STOP condition
+"""
 @cocotb.test()
 async def test_i2c_master_read_random(dut):
 
@@ -486,6 +521,7 @@ async def test_i2c_master_read_random(dut):
 
     byte_index = 0
 
+
     #Sending the bytes
     while byte_index < NUM_BYTES:
 
@@ -526,6 +562,15 @@ async def test_i2c_master_read_random(dut):
         dut._log.info(
         f"Master ACK/NACK bit: SDA={sda}"
         )
+        
+        if byte_index < NUM_BYTES - 1:
+            assert sda == "0", (
+                f"Expected ACK after byte {byte_index}, got SDA={sda}"
+            )
+        else:
+            assert sda in ("1", "H"), (
+                f"Expected NACK after final byte, got SDA={sda}"
+            )
 
         await FallingEdge(dut.sclk_out)
 
