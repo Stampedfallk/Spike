@@ -3,7 +3,7 @@
 -- Title      : I2C_master runner
 -- Project    : Spike
 -------------------------------------------------------------------------------
--- File       : test_i2c_runner.py
+-- File       : test_i2c_master_runner.py
 -- Author     : Jere Nissinen
 -- Edited     : 5.10.2026
 -------------------------------------------------------------------------------
@@ -37,7 +37,7 @@ def test_i2c_master_runner():
 
     runner.test(
         hdl_toplevel="i2c_master_tb_wrapper",
-        test_module="test_i2c_master_write",
+        test_module="test_i2c_master",
         build_dir=build_dir,
         test_args=["--std=08"],
         waves=True,
