@@ -4,7 +4,7 @@
 -------------------------------------------------------------------------------
 -- File       : i2c_system_tb_wrapper.vhd
 -- Author     : Jere Nissinen
--- Edited     : 12.10.2026
+-- Edited     : 13.10.2026
 -------------------------------------------------------------------------------
 -- Description: This file exists, because cocotb cannot drive sdat_inout. This file works
 -- as a wrapper for testing the ic2 system.
@@ -49,6 +49,20 @@ architecture rtl of i2c_system_tb_wrapper is
 
     signal byte_from_master : std_logic_vector(byte_width_c-1 downto 0);
 
+    signal trigger_hygro_measurement : std_logic;
+
+    signal temperature_out : std_logic_vector(2*byte_width_c-1 downto 0);
+    signal humidity_out : std_logic_vector(2*byte_width_c-1 downto 0);
+
+    --Control signals for i2c controllers
+    signal hygro_config_start : std_logic;
+    signal hygro_config_end : std_logic;
+    signal hygro_config_byte : std_logic_vector(byte_width_c-1 downto 0);
+
+    signal hygro_read_start : std_logic;
+    signal hygro_read_end : std_logic;
+    signal hygro_read_byte : std_logic_vector(byte_width_c-1 downto 0);
+
 begin
 
     -- I2C ARBITER
@@ -75,13 +89,33 @@ begin
             permission_in          => permissions(0),
             byte_done_in           => byte_done,
             request_permission_out => requests(0),
-            start_out              => start,
-            end_out                => end_trans,
-            byte_out               => byte_to_master
+            start_out              => hygro_config_start,
+            end_out                => hygro_config_end,
+            byte_out               => hygro_config_byte
         );
 
+    -- HYGRO read controller
+    -- Controller index 2
+    hygro_read_ctrl_inst : entity work.hygro_read_ctrl
+            generic map(
+                byte_width_g => byte_width_c
+            )
+            port map(
+                clk                     => clk,
+                rst_n                   => rst_n,
+                permission_in           => permissions(1),
+                byte_done_in            => byte_done,
+                trigger_measurement_in  => trigger_hygro_measurement,
+                byte_in                 => byte_from_master,
+                request_permission_out  => requests(1),
+                start_out               => hygro_read_start,
+                end_out                 => hygro_read_end,
+                byte_out                => hygro_read_byte,
+                temperature_out         => temperature_out,
+                humidity_out            => humidity_out
+            );
+
     -- UNUSED ARBITER REQUESTS
-    requests(1) <= '0';
     requests(2) <= '0';
 
     -- I2C MASTER
@@ -104,6 +138,25 @@ begin
             byte_done_out => byte_done,
             byte_out      => byte_from_master
         );
+
+
+    process(all)
+    begin
+        start <= '0';
+        end_trans <= '0';
+        byte_to_master <= (others => '0');
+
+        if(permissions(0) = '1') then
+            start <= hygro_config_start;
+            end_trans <= hygro_config_end;
+            byte_to_master <= hygro_config_byte;
+
+        elsif(permissions(1) = '1') then
+            start <= hygro_read_start;
+            end_trans <= hygro_read_end;
+            byte_to_master <= hygro_read_byte;
+        end if;
+    end process;
 
     -- I2C SDA PULL-UP
     sdat_bus <= 'H';
