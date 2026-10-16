@@ -5,7 +5,7 @@
 -------------------------------------------------------------------------------
 -- File       : test_i2c_system_runner.py
 -- Author     : Jere Nissinen
--- Edited     : 13.10.2026
+-- Edited     : 15.10.2026
 -------------------------------------------------------------------------------
 -- Description: Cocotb runner for building and simulating the i2c_system with GHDL.
 -------------------------------------------------------------------------------
@@ -23,6 +23,7 @@ def test_i2c_hygro_system_runner():
         project_dir / "vhd" / "i2c_arbitter.vhd",
         project_dir / "vhd" / "hygro_config.vhd",
         project_dir / "vhd" / "hygro_read_ctrl.vhd",
+        project_dir / "vhd" / "stemma_read_ctrl.vhd",
         project_dir / "vhd" / "i2c_system_tb_wrapper.vhd"
     ]
 

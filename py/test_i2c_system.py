@@ -284,3 +284,70 @@ async def test_hygro_measurement(dut):
     dut._log.info(
     "HYGRO measurement test passed"
     )    
+
+@cocotb.test()
+async def test_stemma_measurement(dut):
+
+    soil_moisture = 0x9ABC
+
+    cocotb.start_soon(
+        Clock(dut.clk, 100, unit="ns").start()
+    )
+
+    dut.trigger_stemma_measurement.value = 0
+    dut.slave_sda_drive_low_in.value = 0
+
+    #Trigger measurement
+    dut.trigger_stemma_measurement.value = 1
+    await RisingEdge(dut.clk)
+    dut.trigger_stemma_measurement.value = 0
+
+    dut._log.info("Stemma measurement started")
+
+    #Measurement request:
+    # START
+    # 0x59 -> ACK
+    # 0x0F -> ACK
+    # 0x10 -> ACK
+    # STOP
+
+    await wait_for_start(dut)
+    await receive_and_check_byte(dut, 0x6C)
+    await receive_and_check_byte(dut, 0x0F)
+    await receive_and_check_byte(dut, 0x10)
+    await wait_for_stop(dut)
+
+    dut._log.info("Measurement request received")
+
+    #Sensor sends the data
+    # START 
+    # 0x5A -> ACK
+    # MSB
+    # LSB
+    # STOP
+
+    await wait_for_start(dut)
+    await receive_and_check_byte(dut, 0x6D)
+
+    moisture_msb = (soil_moisture >> 8) & 0xFF
+    moisture_lsb = soil_moisture & 0xFF
+
+    await send_i2c_byte(dut, moisture_msb)
+    await send_i2c_byte(dut, moisture_lsb)
+    await wait_for_stop(dut)
+
+    soil_moisture_received = int(dut.soil_moisture_out.value)
+
+    dut._log.info(
+        f"Moisture expected: 0x{soil_moisture:04X}"
+        f"received: 0x{soil_moisture_received:04X}"
+    )
+
+    assert soil_moisture_received == soil_moisture, (
+        f"Expected soil moisture 0x{soil_moisture:04X}"
+        f"got 0x{soil_moisture_received:04X}"
+    )
+
+    dut._log.info(
+        "STEMMA measurement test passed"
+    )

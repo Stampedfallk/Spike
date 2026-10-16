@@ -50,9 +50,11 @@ architecture rtl of i2c_system_tb_wrapper is
     signal byte_from_master : std_logic_vector(byte_width_c-1 downto 0);
 
     signal trigger_hygro_measurement : std_logic;
+    signal trigger_stemma_measurement : std_logic;
 
     signal temperature_out : std_logic_vector(2*byte_width_c-1 downto 0);
     signal humidity_out : std_logic_vector(2*byte_width_c-1 downto 0);
+    signal soil_moisture_out : std_logic_vector(2*byte_width_c-1 downto 0);
 
     --Control signals for i2c controllers
     signal hygro_config_start : std_logic;
@@ -62,6 +64,10 @@ architecture rtl of i2c_system_tb_wrapper is
     signal hygro_read_start : std_logic;
     signal hygro_read_end : std_logic;
     signal hygro_read_byte : std_logic_vector(byte_width_c-1 downto 0);
+
+    signal stemma_read_start : std_logic;
+    signal stemma_read_end : std_logic;
+    signal stemma_read_byte : std_logic_vector(byte_width_c-1 downto 0);
 
 begin
 
@@ -95,7 +101,7 @@ begin
         );
 
     -- HYGRO read controller
-    -- Controller index 2
+    -- Controller index 1
     hygro_read_ctrl_inst : entity work.hygro_read_ctrl
             generic map(
                 byte_width_g => byte_width_c
@@ -115,8 +121,27 @@ begin
                 humidity_out            => humidity_out
             );
 
+    -- Stemma read controller
+    -- Controller index 2
+    stemma_read_ctrl_inst : entity work.stemma_read_ctrl
+            generic map(
+                byte_width_g => byte_width_c
+            )
+            port map(
+                clk =>                      clk,
+                rst_n =>                    rst_n,
+                permission_in =>            permissions(2),
+                byte_done_in =>             byte_done,
+                trigger_measurement_in =>   trigger_stemma_measurement,
+                byte_in =>                  byte_from_master,
+                request_permission_out =>   requests(2),
+                start_out =>                stemma_read_start,
+                end_out =>                  stemma_read_end,
+                byte_out =>                 stemma_read_byte,
+                soil_moisture_out =>        soil_moisture_out
+            );
     -- UNUSED ARBITER REQUESTS
-    requests(2) <= '0';
+    -- -> NONE
 
     -- I2C MASTER
     i2c_master_inst : entity work.i2c_master
@@ -155,6 +180,11 @@ begin
             start <= hygro_read_start;
             end_trans <= hygro_read_end;
             byte_to_master <= hygro_read_byte;
+
+        elsif(permissions(2) = '1') then
+            start <= stemma_read_start;
+            end_trans <= stemma_read_end;
+            byte_to_master <= stemma_read_byte;
         end if;
     end process;
 
