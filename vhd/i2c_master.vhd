@@ -33,6 +33,7 @@ entity i2c_master is
         byte_in : in std_logic_vector(byte_width_g-1 downto 0);
         sdat_inout : inout std_logic;
         sclk_out : out std_logic;
+        ack_out : out std_logic; --Tell the master about possible ack
         byte_done_out : out std_logic; --Toggles high on the last bit of the byte
         byte_out : out std_logic_vector(byte_width_g-1 downto 0) --In read mode the byte out
     );
@@ -87,19 +88,22 @@ begin
         if(rst_n = '0') then
             sdat_inout_r <= '1';
             sdat_zen <= '0';
+            ack_out <= '0';
             bit_counter_r <= byte_width_g;
             curr_state_r <= idle;
             next_state <= idle;
             previous_state <= idle;
             byte_done_out <= '0';
             byte_out <= (others => '0');
+            ack_out <= '0';
 
         elsif(clk'event and clk='1') then
             case curr_state_r is
 
                 when idle =>
-                    --Transimttion started condition
+                    byte_done_out <= '0';
                     if(start_in = '1') then
+                        ack_out <= '0';
                         sdat_inout_r <= '0';
                         curr_state_r <= transmit_address;
                     end if;
@@ -125,16 +129,22 @@ begin
                     end if;
 
                 when wait_ack =>
-                    if(sclk_r = '1' and sclk_counter_r = sclk_half_c) then --Read the ack on the rising edge
-                        if(sdat_in = '0') then --got ack
+                    bit_counter_r <= byte_width_g;
+                    if(sclk_r = '1' and sclk_counter_r = sclk_half_c + 1) then
+                        if(sdat_in = '0') then
+                            -- ACK received
+                            ack_out <= '0';
                             byte_done_out <= '1';
                             curr_state_r <= next_state;
-                        
-                        elsif(sdat_in = '1') then --got nack
-                            curr_state_r <= previous_state;
+
+                        elsif(sdat_in = '1') then
+                            -- NACK received
+                            ack_out <= '1';
+                            byte_done_out <= '1';
+                            curr_state_r <= end_state;
                         end if;
+
                     end if;
-                    bit_counter_r <= byte_width_g;
                     
 
                 when transmit_byte =>
@@ -193,7 +203,7 @@ begin
                         sdat_inout_r <= '1';
                     end if;
                 
-                when end_state => --Perform the end condition
+                when end_state =>
                     byte_done_out <= '0';
                     sdat_zen <= '0';
                     sdat_inout_r <= '0';

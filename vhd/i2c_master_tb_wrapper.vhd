@@ -29,6 +29,7 @@ entity i2c_master_tb_wrapper is
         sclk_out : out std_logic;
         byte_done_out : out std_logic;
         byte_out : out std_logic_vector(byte_width_g-1 downto 0);
+        ack_out : out std_logic;
 
         slave_sda_drive_low_in : in std_logic; --cocotb controls this signal to drive in values to the dut
 
@@ -59,7 +60,8 @@ begin
             sdat_inout => sdat_bus,
             sclk_out => sclk_out,
             byte_done_out => byte_done_out,
-            byte_out => byte_out
+            byte_out => byte_out,
+            ack_out => ack_out
         );
 
     sdat_bus <= '0' when slave_sda_drive_low_in = '1' else 'Z';
