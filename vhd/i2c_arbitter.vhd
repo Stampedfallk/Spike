@@ -33,10 +33,8 @@ architecture rtl of i2c_arbitter is
     type queue_type is array (0 to num_of_controllers_g-1) of integer range 0 to num_of_controllers_g;
     signal queue : queue_type;
     signal count : integer range 0 to num_of_controllers_g;
-
-
     signal previous_requests_r : std_logic_vector(num_of_controllers_g-1 downto 0);
-
+    
 begin
 
     --Control the queue
@@ -48,19 +46,15 @@ begin
             queue <= (others => num_of_controllers_g);
             count <= 0;
             previous_requests_r <= (others => '0');
-
         elsif(clk'event and clk = '1') then
-
             next_queue := queue;
             next_count := count;
-
             --Remove the current controller once it lowers its request
             if count > 0 then
                 if requests_in(queue(0)) = '0' then
                     for i in 0 to num_of_controllers_g-2 loop
                         next_queue(i) := queue(i+1);
                     end loop;
-
                     next_queue(num_of_controllers_g-1) := num_of_controllers_g;
                     next_count := count - 1;
                 end if;
@@ -69,18 +63,22 @@ begin
             --The most important resource asks for permission it will be added to front
             if(previous_requests_r(0) = '0' and requests_in(0) = '1') then
                 if next_count < num_of_controllers_g then
-                    for i in num_of_controllers_g-1 downto 1 loop
-                        if i <= next_count then
-                            next_queue(i) := next_queue(i-1);
-                        end if;
-                    end loop;
-                    
-                    next_queue(0) := 0;
+                    if next_count = 0 then
+                        next_queue(0) := 0;
+                    else
+                        --Do not take the bus away from the controller that is already using it: go right behind it
+                        for i in num_of_controllers_g-1 downto 2 loop
+                            if i <= next_count then
+                                next_queue(i) := next_queue(i-1);
+                            end if;
+                        end loop;
+                        next_queue(1) := 0;
+                    end if;
                     next_count := next_count + 1;
                 end if;
             end if;
 
-            --Other controllers can also be added
+            --Other controllers can also be adde
             for i in 1 to num_of_controllers_g-1 loop
                 if(previous_requests_r(i) ) = '0' and requests_in(i) = '1' then
                     if next_count < num_of_controllers_g then
@@ -92,7 +90,6 @@ begin
 
             queue <= next_queue;
             count <= next_count;
-
             previous_requests_r <= requests_in;
         end if;
     end process queue_process;
@@ -105,7 +102,5 @@ begin
         if count > 0 then
             permissions_out(queue(0)) <= '1';
         end if;
-
     end process permission_process;
-
 end rtl;

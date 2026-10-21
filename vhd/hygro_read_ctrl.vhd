@@ -19,6 +19,7 @@ entity hygro_read_ctrl is
         clk, rst_n : in std_logic;
         permission_in : in std_logic; --Tells that this module has permmission to use i2c_master
         byte_done_in : in std_logic; --i2c master tells that a byte has been processed
+        ack_in : in std_logic; --i2c master tells if it got nack
         byte_in : in std_logic_vector(byte_width_g-1 downto 0);
         trigger_measurement_in : in std_logic; --Triggers the measeurement
         request_permission_out : out std_logic; --Used to request permission to use i2c_master
@@ -42,8 +43,10 @@ architecture rtl of hygro_read_ctrl is
     constant i2c_address_read_c : std_logic_vector := "10000001";
 
     --The states in fsm and state signal
-    type state_type is (idle, ask_permission, send_address_write, send_register_address, send_address_read, receive_temp_msb, receive_temp_lsb, receive_hum_msb, receive_hum_lsb);
+    type state_type is (idle, ask_permission, send_address_write, send_register_address, wait_state, send_address_read, receive_temp_msb, receive_temp_lsb, receive_hum_msb, receive_hum_lsb, retry);
     signal curr_state_r : state_type;
+
+    signal wait_counter : integer range 0 to 2600000;
     
 begin
     --The fsm process
@@ -57,6 +60,7 @@ begin
             temperature_out <= (others => '0');
             humidity_out <= (others => '0');
             curr_state_r <= idle;
+            wait_counter <= 0;
 
         elsif(clk'event and clk = '1') then
             
@@ -67,6 +71,7 @@ begin
                 start_out <= '0';
                 end_out <= '0';
                 byte_out <= (others => '0');
+                wait_counter <= 0;
 
                 --Wait for the triggered measurement:
                 if(trigger_measurement_in = '1') then
@@ -75,61 +80,148 @@ begin
                     curr_state_r <= ask_permission;
                 end if;
 
+
             when ask_permission =>
                 request_permission_out <= '1';
+                start_out <= '0';
+                end_out <= '0';
+
                 if(permission_in = '1') then
                     curr_state_r <= send_address_write;
                 end if;
 
+
             when send_address_write =>
                 byte_out <= i2c_address_write_c;
                 start_out <= '1';
+                end_out <= '0';
+
+                --Wait until the address byte has been processed
                 if(byte_done_in = '1') then
-                    curr_state_r <= send_register_address;
+                    start_out <= '0';
+
+                    --If the sensor acked continue the communication
+                    if(ack_in = '0') then
+                        curr_state_r <= send_register_address;
+
+                    --If the sensor nacked retry the whole communication
+                    else
+                        curr_state_r <= retry;
+                    end if;
                 end if;
+
 
             when send_register_address =>
                 byte_out <= pointer_register_address_c;
                 start_out <= '0';
                 end_out <= '1';
+
+                --Wait until the register address has been processed
                 if(byte_done_in = '1') then
-                    curr_state_r <= send_address_read;
+                    end_out <= '0';
+
+                    --If the sensor acked wait for the measurement
+                    if(ack_in = '0') then
+                        wait_counter <= 0;
+                        curr_state_r <= wait_state;
+
+                    --If the sensor nacked retry the whole communication
+                    else
+                        curr_state_r <= retry;
+                    end if;
                 end if;
+
+
+            when wait_state =>
+                start_out <= '0';
+                end_out <= '0';
+                byte_out <= (others => '0');
+
+                --Wait until the measurement should be ready
+                if(wait_counter = 2500000) then
+                    curr_state_r <= send_address_read;
+                    wait_counter <= 0;
+                else
+                    wait_counter <= wait_counter + 1;
+                end if;
+
 
             when send_address_read =>
                 byte_out <= i2c_address_read_c;
                 start_out <= '1';
                 end_out <= '0';
+
+                --Wait until the read address has been processed
                 if(byte_done_in = '1') then
-                    curr_state_r <= receive_temp_msb;
+                    start_out <= '0';
+
+                    --If the sensor acked start receiving the measurement
+                    if(ack_in = '0') then
+                        curr_state_r <= receive_temp_msb;
+
+                    --If the sensor nacked retry the communication
+                    else
+                        curr_state_r <= retry;
+                    end if;
                 end if;
+
 
             when receive_temp_msb =>
                 byte_out <= (others => '0');
                 start_out <= '0';
+                end_out <= '0';
+
+                --Wait until the temperature msb has been received
                 if(byte_done_in = '1') then
                     temperature_out(2*byte_width_g-1 downto byte_width_g) <= byte_in;
                     curr_state_r <= receive_temp_lsb;
                 end if;
 
+
             when receive_temp_lsb =>
+                start_out <= '0';
+                end_out <= '0';
+
+                --Wait until the temperature lsb has been received
                 if(byte_done_in = '1') then
                     temperature_out(byte_width_g-1 downto 0) <= byte_in;
                     curr_state_r <= receive_hum_msb;
                 end if;
 
+
             when receive_hum_msb =>
+                start_out <= '0';
+                end_out <= '0';
+
+                --Wait until the humidity msb has been received
                 if(byte_done_in = '1') then
                     humidity_out(2*byte_width_g-1 downto byte_width_g) <= byte_in;
                     curr_state_r <= receive_hum_lsb;
                 end if;
 
+
             when receive_hum_lsb =>
+                start_out <= '0';
                 end_out <= '1';
+
+                --Wait until the humidity lsb has been received
                 if(byte_done_in = '1') then
                     humidity_out(byte_width_g-1 downto 0) <= byte_in;
+                    end_out <= '0';
                     curr_state_r <= idle;
                 end if;
+
+
+            when retry =>
+                --Release the i2c master before starting a new transaction
+                request_permission_out <= '0';
+                start_out <= '0';
+                end_out <= '0';
+                byte_out <= (others => '0');
+                wait_counter <= 0;
+
+                --Request permission again on the next clock cycle
+                curr_state_r <= ask_permission;
                 
             end case;
         end if;

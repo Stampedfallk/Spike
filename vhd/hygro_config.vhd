@@ -4,7 +4,7 @@
 -------------------------------------------------------------------------------
 -- File       : hygro_config.vhd
 -- Author     : Jere Nissinen
--- Edited     : 12.10.2026
+-- Edited     : 20.10.2026
 -------------------------------------------------------------------------------
 -- Description: Configurates the HYGRO HUMIDITY TEMP SENSOR before using it to read 
 -- data. Sends the config values after reset and then idles around. This has the highest
@@ -21,6 +21,7 @@ entity hygro_config is
         clk, rst_n : in std_logic;
         permission_in : in std_logic; --Tells that this module has permmission to use i2c_master
         byte_done_in : in std_logic; --i2c master tells that a byte has been processed
+        ack_in : in std_logic; --i2c master tells if it got nack
         request_permission_out : out std_logic; --Used to request permission to use i2c_master
         start_out : out std_logic; --Initiates the use of i2c_master
         end_out : out std_logic; --Tells the i2c_master that the last byte is being sent
@@ -52,7 +53,7 @@ begin
             curr_state_r <= start_state;
 
         elsif(clk'event and clk = '1') then
-            
+
             case curr_state_r is
 
             when start_state =>
@@ -68,27 +69,44 @@ begin
                 byte_out <= i2c_address_c;
                 start_out <= '1';
                 if(byte_done_in = '1') then
-                    curr_state_r <= send_register_address;
+                    start_out <= '0';
+                    if(ack_in = '0') then
+                        curr_state_r <= send_register_address;
+                    else
+                        curr_state_r <= ask_permission;
+                    end if;
                 end if;
             
             when send_register_address =>
                 byte_out <= register_address_c;
-                start_out <= '0';
                 if(byte_done_in = '1') then
-                    curr_state_r <= send_config_msb;
+                    if(ack_in = '0') then
+                        curr_state_r <= send_config_msb;
+                    else
+                        curr_state_r <= ask_permission;
+                    end if;
                 end if;
             
             when send_config_msb =>
                 byte_out <= msb_byte_c;
                 if(byte_done_in = '1') then
-                    curr_state_r <= send_config_lsb;
+                    if(ack_in = '0') then
+                        curr_state_r <= send_config_lsb;
+                    else
+                        curr_state_r <= ask_permission;
+                    end if;
                 end if;
             
             when send_config_lsb =>
                 end_out <= '1';
                 byte_out <= lsb_byte_c;
                 if(byte_done_in = '1') then
-                    curr_state_r <= done;
+                    end_out <= '0';
+                    if(ack_in = '0') then
+                        curr_state_r <= done;
+                    else
+                        curr_state_r <= ask_permission;
+                    end if;
                 end if;
 
             when done =>

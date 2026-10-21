@@ -5,7 +5,7 @@
 -------------------------------------------------------------------------------
 -- File       : test_i2c_system.py
 -- Author     : Jere Nissinen
--- Edited     : 13.10.2026
+-- Edited     : 20.10.2026
 -------------------------------------------------------------------------------
 -- Description: Containts the test sequences and helper functions for the I2C_system
 -------------------------------------------------------------------------------
@@ -194,7 +194,7 @@ async def test_hygro_measurement(dut):
 
     #Start clock
     cocotb.start_soon(
-        Clock(dut.clk, 100, unit = "ns").start()
+        Clock(dut.clk, 100, unit="ns").start()
     )
 
     dut.trigger_hygro_measurement.value = 0
@@ -220,17 +220,20 @@ async def test_hygro_measurement(dut):
 
     dut._log.info("Measurement request received")
 
-    #Sensor busy
-    # Controller tries to read with 0x81
-    # Sensor resonds with nack 3 times
-    
-    await wait_for_start(dut)
+    #Sensor is busy for the first three read attempts.
+    #After every NACK the controller starts the whole
+    #measurement transaction again.
+
     for attempt in range(3):
+
+        #Read attempt
+        await wait_for_start(dut)
+
         received = await receive_i2c_byte(dut)
 
         assert received == 0x81, (
             f"Expected I2C byte 0x81, "
-            f"fot 0x{received:02X}"
+            f"got 0x{received:02X}"
         )
 
         dut._log.info(
@@ -239,13 +242,43 @@ async def test_hygro_measurement(dut):
 
         await send_nack(dut)
 
+        #Master should end the failed transaction
+        await wait_for_stop(dut)
+
+        dut._log.info(
+            f"Read attempt {attempt + 1}: STOP detected"
+        )
+
+        #Controller retries the whole measurement sequence:
+        # START
+        # 0x80 -> ACK
+        # 0x00 -> ACK
+        # STOP
+
+        await wait_for_start(dut)
+
+        await receive_and_check_byte(dut, 0x80)
+        await receive_and_check_byte(dut, 0x00)
+
+        await wait_for_stop(dut)
+
+        dut._log.info(
+            f"Measurement restarted after NACK {attempt + 1}"
+        )
+
     #Sensor ready
-    # 4th 0x81 gets ACK
+    #Fourth 0x81 gets ACK
+
+    await wait_for_start(dut)
+
     await receive_and_check_byte(dut, 0x81)
 
-    dut._log.info("Read attempt 4: sensor ready -> ACK")
+    dut._log.info(
+        "Read attempt 4: sensor ready -> ACK"
+    )
 
     #Send temperature and humidity
+
     temperature_msb = (temperature >> 8) & 0xFF
     temperature_lsb = temperature & 0xFF
 
@@ -256,34 +289,42 @@ async def test_hygro_measurement(dut):
     await send_i2c_byte(dut, temperature_lsb)
     await send_i2c_byte(dut, humidity_msb)
     await send_i2c_byte(dut, humidity_lsb)
+
     await wait_for_stop(dut)
 
-    temperature_received = int(dut.temperature_out.value)
-    humidity_received = int(dut.humidity_out.value)
+    #Check received values
 
-    dut._log.info(
-    f"Temperature expected: 0x{temperature:04X}, "
-    f"received: 0x{temperature_received:04X}"
+    temperature_received = int(
+        dut.temperature_out.value
+    )
+
+    humidity_received = int(
+        dut.humidity_out.value
     )
 
     dut._log.info(
-    f"Humidity expected: 0x{humidity:04X}, "
-    f"received: 0x{humidity_received:04X}"
+        f"Temperature expected: 0x{temperature:04X}, "
+        f"received: 0x{temperature_received:04X}"
+    )
+
+    dut._log.info(
+        f"Humidity expected: 0x{humidity:04X}, "
+        f"received: 0x{humidity_received:04X}"
     )
 
     assert temperature_received == temperature, (
-    f"Expected temperature 0x{temperature:04X}, "
-    f"got 0x{temperature_received:04X}"
+        f"Expected temperature 0x{temperature:04X}, "
+        f"got 0x{temperature_received:04X}"
     )
 
     assert humidity_received == humidity, (
-    f"Expected humidity 0x{humidity:04X}, "
-    f"got 0x{humidity_received:04X}"
+        f"Expected humidity 0x{humidity:04X}, "
+        f"got 0x{humidity_received:04X}"
     )
 
     dut._log.info(
-    "HYGRO measurement test passed"
-    )    
+        "HYGRO measurement test passed"
+    )
 
 @cocotb.test()
 async def test_stemma_measurement(dut):
@@ -328,6 +369,8 @@ async def test_stemma_measurement(dut):
 
     await wait_for_start(dut)
     await receive_and_check_byte(dut, 0x6D)
+    
+    dut._log.info("Got here")
 
     moisture_msb = (soil_moisture >> 8) & 0xFF
     moisture_lsb = soil_moisture & 0xFF

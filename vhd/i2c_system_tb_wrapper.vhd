@@ -39,15 +39,15 @@ architecture rtl of i2c_system_tb_wrapper is
     signal requests    : std_logic_vector(num_of_controllers_c-1 downto 0);
     signal permissions : std_logic_vector(num_of_controllers_c-1 downto 0);
 
-    -- Hygro config -> I2C master
+    -- Sensor interface -> I2C_master
     signal start          : std_logic;
     signal end_trans      : std_logic;
     signal byte_to_master : std_logic_vector(byte_width_c-1 downto 0);
 
     -- I2C master -> Hygro config
     signal byte_done : std_logic;
-
     signal byte_from_master : std_logic_vector(byte_width_c-1 downto 0);
+    signal ack : std_logic;
 
     signal trigger_hygro_measurement : std_logic;
     signal trigger_stemma_measurement : std_logic;
@@ -94,6 +94,7 @@ begin
             rst_n                  => rst_n,
             permission_in          => permissions(0),
             byte_done_in           => byte_done,
+            ack_in                 => ack,
             request_permission_out => requests(0),
             start_out              => hygro_config_start,
             end_out                => hygro_config_end,
@@ -113,6 +114,7 @@ begin
                 byte_done_in            => byte_done,
                 trigger_measurement_in  => trigger_hygro_measurement,
                 byte_in                 => byte_from_master,
+                ack_in                  => ack,
                 request_permission_out  => requests(1),
                 start_out               => hygro_read_start,
                 end_out                 => hygro_read_end,
@@ -134,6 +136,7 @@ begin
                 byte_done_in =>             byte_done,
                 trigger_measurement_in =>   trigger_stemma_measurement,
                 byte_in =>                  byte_from_master,
+                ack_in =>                   ack,
                 request_permission_out =>   requests(2),
                 start_out =>                stemma_read_start,
                 end_out =>                  stemma_read_end,
@@ -161,7 +164,8 @@ begin
             sclk_out      => sclk_out,
 
             byte_done_out => byte_done,
-            byte_out      => byte_from_master
+            byte_out      => byte_from_master,
+            ack_out       => ack
         );
 
 

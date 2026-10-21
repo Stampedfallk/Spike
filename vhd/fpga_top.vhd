@@ -4,7 +4,7 @@
 -------------------------------------------------------------------------------
 -- File       : fpga_top.vhd
 -- Author     : Jere Nissinen
--- Edited     : 16.10.2026
+-- Edited     : 20.10.2026
 -------------------------------------------------------------------------------
 -- Description: Top module for the fpga implementation. Connects with physical io ports of the development board.
 -------------------------------------------------------------------------------
@@ -16,7 +16,7 @@ entity fpga_top is
         byte_width_g   : integer := 8;
         sclk_freq_g    : integer := 1000000;
         ref_clk_freq_g : integer := 125000000;
-        i2c_freq_g     : integer := 20000;
+        i2c_freq_g     : integer := 100000;
         num_buttons_g  : integer := 3
     );
 
@@ -47,12 +47,21 @@ architecture structural of fpga_top is
     -- I2C master -> sensor interface
     signal byte_done        : std_logic;
     signal byte_from_master : std_logic_vector(byte_width_g-1 downto 0);
+    signal ack              : std_logic;
 
     -- Sensor values
     signal light       : std_logic_vector(byte_width_g-1 downto 0);
     signal moisture    : std_logic_vector(2*byte_width_g-1 downto 0);
     signal humidity    : std_logic_vector(2*byte_width_g-1 downto 0);
     signal temperature : std_logic_vector(2*byte_width_g-1 downto 0);
+
+    --Make the signals readable for early fpga debug
+    attribute mark_debug : string;
+
+    attribute mark_debug of light : signal is "true";
+    attribute mark_debug of moisture : signal is "true";
+    attribute mark_debug of humidity : signal is "true";
+    attribute mark_debug of temperature : signal is "true";
 
 
     component sensor_interface_top is
@@ -70,6 +79,7 @@ architecture structural of fpga_top is
             sdat_in                 : in std_logic;
             byte_done_in            : in std_logic;
             byte_from_i2c_master_in : in std_logic_vector(byte_width_g-1 downto 0);
+            ack_in                  : in std_logic;
 
             cs_out    : out std_logic;
             sclk_out  : out std_logic;
@@ -101,6 +111,7 @@ architecture structural of fpga_top is
             sdat_inout    : inout std_logic;
             sclk_out      : out std_logic;
             byte_done_out : out std_logic;
+            ack_out       : out std_logic;
             byte_out      : out std_logic_vector(byte_width_g-1 downto 0)
         );
     end component;
@@ -126,6 +137,7 @@ begin
 
             -- I2C master interface
             byte_done_in            => byte_done,
+            ack_in                  => ack,
             byte_from_i2c_master_in => byte_from_master,
             start_out               => start,
             end_out                 => end_trans,
@@ -155,6 +167,7 @@ begin
             byte_in       => byte_to_master,
             byte_done_out => byte_done,
             byte_out      => byte_from_master,
+            ack_out       => ack,
 
             -- Physical I2C bus
             sdat_inout    => i2c_sdat_inout,

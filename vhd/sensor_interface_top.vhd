@@ -4,7 +4,7 @@
 -------------------------------------------------------------------------------
 -- File       : sensor_interface_top.vhd
 -- Author     : Jere Nissinen
--- Edited     : 15.10.2026
+-- Edited     : 20.10.2026
 -------------------------------------------------------------------------------
 -- Description: Top module for communicating with all the sensors and i2c_master
 -------------------------------------------------------------------------------
@@ -23,6 +23,7 @@ entity sensor_interface_top is
         clk                     : in std_logic;
         rst_n                   : in std_logic;
         buttons_in              : in std_logic_vector(num_buttons_g-1 downto 0);
+        ack_in                  : in std_logic;
         sdat_in                 : in std_logic;
         byte_done_in            : in std_logic;
         byte_from_i2c_master_in : in std_logic_vector(byte_width_g-1 downto 0);
@@ -108,6 +109,7 @@ architecture structural of sensor_interface_top is
             clk                    : in std_logic;
             rst_n                  : in std_logic;
             permission_in          : in std_logic;
+            ack_in                 : in std_logic;
             byte_done_in           : in std_logic;
             request_permission_out : out std_logic;
             start_out              : out std_logic;
@@ -127,6 +129,7 @@ architecture structural of sensor_interface_top is
             rst_n                  : in std_logic;
             permission_in          : in std_logic;
             byte_done_in           : in std_logic;
+            ack_in                 : in std_logic;
             byte_in                : in std_logic_vector(byte_width_g-1 downto 0);
             trigger_measurement_in : in std_logic;
             request_permission_out : out std_logic;
@@ -148,6 +151,7 @@ architecture structural of sensor_interface_top is
             clk                    : in std_logic;
             rst_n                  : in std_logic;
             permission_in          : in std_logic;
+            ack_in                 : in std_logic;
             byte_done_in           : in std_logic;
             byte_in                : in std_logic_vector(byte_width_g-1 downto 0);
             trigger_measurement_in : in std_logic;
@@ -198,6 +202,7 @@ begin
             clk                    => clk,
             rst_n                  => rst_n,
             permission_in          => permissions(0),
+            ack_in                 => ack_in,
             byte_done_in           => byte_done_in,
             request_permission_out => requests(0),
             start_out              => hygro_config_start,
@@ -216,6 +221,7 @@ begin
             permission_in          => permissions(1),
             byte_done_in           => byte_done_in,
             byte_in                => byte_from_i2c_master_in,
+            ack_in                 => ack_in,
             trigger_measurement_in => buttons_in(1),
             request_permission_out => requests(1),
             start_out              => hygro_read_start,
@@ -236,6 +242,7 @@ begin
             permission_in          => permissions(2),
             byte_done_in           => byte_done_in,
             byte_in                => byte_from_i2c_master_in,
+            ack_in                 => ack_in,
             trigger_measurement_in => buttons_in(2),
             request_permission_out => requests(2),
             start_out              => stemma_read_start,
