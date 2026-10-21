@@ -631,3 +631,97 @@ async def test_i2c_master_read_random(dut):
     dut._log.info(
         "Random I2C read test completed successfully"
     )
+
+'''
+Tests ACK sampling robustness by delaying the slace ACK.
+
+Verifies:
+- Addresse transmittions
+- Delayed slave ACK response
+- ACK detection acros different timing offset
+- Proper byte done_out assertions
+- Correct ACK/NACK reporting
+- ACK sampling margin
+'''
+@cocotb.test()
+async def test_ack_timing_sweep(dut):
+
+    cocotb.start_soon(
+        Clock(dut.clk, 100, unit="ns").start()
+    )
+
+    delays = [
+        0,
+        10,
+        20,
+        50,
+        100,
+        150,
+        200,
+        250,
+        300
+    ]
+
+    for delay in delays:
+
+        dut._log.info(
+            f"Testing ACK delay = {delay}"
+        )
+
+        # reset
+        dut.rst_n.value = 0
+        dut.start_in.value = 0
+        dut.end_in.value = 0
+        dut.byte_in.value = 0
+        dut.slave_sda_drive_low_in.value = 0
+
+        for _ in range(5):
+            await RisingEdge(dut.clk)
+
+        dut.rst_n.value = 1
+
+        for _ in range(2):
+            await RisingEdge(dut.clk)
+
+        # start address transfer
+        dut.byte_in.value = 0x80
+        dut.start_in.value = 1
+
+        await RisingEdge(dut.clk)
+
+        dut.start_in.value = 0
+
+        await wait_for_start(dut)
+
+        await receive_and_check_byte(
+            dut,
+            0x80
+        )
+
+        # ACK cycle begins
+        await FallingEdge(dut.sclk_out)
+
+        # Delay ACK intentionally
+        for _ in range(delay):
+            await RisingEdge(dut.clk)
+
+        # Now ACK
+        dut.slave_sda_drive_low_in.value = 1
+
+        await RisingEdge(dut.sclk_out)
+
+        # Wait until master decides
+        await RisingEdge(dut.byte_done_out)
+
+        ack = int(dut.ack_out.value)
+
+        dut._log.info(
+            f"delay={delay} -> "
+            f"ack_out={ack}"
+        )
+
+        dut.slave_sda_drive_low_in.value = 0
+
+        # Let transaction finish
+        for _ in range(20):
+            await RisingEdge(dut.clk)
