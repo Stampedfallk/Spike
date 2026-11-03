@@ -24,8 +24,20 @@ My intention is to use this system mainly with cacti, but it is possible to use 
 
 ## 2. Status
 
-# 27.10:
+# 3.11:
 Currently the sensor interface is fully operational. I can read data from all the sensors and inspect them through Vivado ILA.
-I'm currently working on making the UART functional, so I could read the data on my PC.
+UART should now be functional. I studied how I could get it working and I found out it would require a lot of work to use the uart through the processor on chip. I need an UART to USB bridge to validate my design and will look to obtain one shortly.
+
+## 3. IP Blocks
+
+## 4. Interfaces
+
+## 5. Design Flow
+
+### Project approach
+
+### Coding and simulation
+
+## 6. Improvement
 
 ... WORK IN PROGRESS ...

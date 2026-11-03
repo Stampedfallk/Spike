@@ -21,7 +21,6 @@ entity uart_streamer is
         trigger_transmittion_in : in std_logic;
         busy_in : in std_logic;
         light_in : in std_logic_vector(byte_width_g-1 downto 0);
-        sensors_done_in : in std_logic; --Connect the sensor with the lowest priority here
         temperature_in : in std_logic_vector(2*byte_width_g-1 downto 0);
         humidity_in : in std_logic_vector(2*byte_width_g-1 downto 0);
         moisture_in : in std_logic_vector(2*byte_width_g-1 downto 0);
@@ -30,86 +29,61 @@ entity uart_streamer is
     );
 end uart_streamer;
 
-architecture rtl of uart_streamer is 
-    type state_type is (idle, wait_for_sensors, light, temp_msb, temp_lsb, hum_msb, hum_lsb, moist_msb, moist_lsb);
+architecture rtl of uart_streamer is
+    type state_type is (idle, send_byte, wait_busy_high, wait_busy_low);
     signal curr_state_r : state_type;
+    signal byte_idx_r   : integer range 0 to 6;
 begin
 
     fsm_process : process(clk, rst_n)
-    
     begin
         if(rst_n = '0') then
-            byte_out <= (others => '0');
-            start_out <= '0';
+            byte_out     <= (others => '0');
+            start_out    <= '0';
+            byte_idx_r   <= 0;
             curr_state_r <= idle;
-        
+
         elsif(clk'event and clk = '1') then
+            start_out <= '0';
 
             case curr_state_r is
 
             when idle =>
-                byte_out <= (others => '0');
-                start_out <= '0';
+                byte_idx_r <= 0;
                 if(trigger_transmittion_in = '1') then
-                    curr_state_r <= wait_for_sensors;
+                    curr_state_r <= send_byte;
                 end if;
 
-            when wait_for_sensors =>
-                if(sensors_done_in = '0') then
-                    curr_state_r <= light;
-                end if;
-
-            when light =>
-                start_out <= '1';
-                byte_out <= light_in;
-                curr_state_r <= temp_msb;
-
-            when temp_msb =>
-                start_out <= '0';
+            when send_byte =>
                 if(busy_in = '0') then
                     start_out <= '1';
-                    byte_out <= temperature_in(2*byte_width_g-1 downto byte_width_g);
-                    curr_state_r <= temp_lsb;
+                    case byte_idx_r is
+                        when 0 => byte_out <= light_in;
+                        when 1 => byte_out <= temperature_in(2*byte_width_g-1 downto byte_width_g);
+                        when 2 => byte_out <= temperature_in(byte_width_g-1 downto 0);
+                        when 3 => byte_out <= humidity_in(2*byte_width_g-1 downto byte_width_g);
+                        when 4 => byte_out <= humidity_in(byte_width_g-1 downto 0);
+                        when 5 => byte_out <= moisture_in(2*byte_width_g-1 downto byte_width_g);
+                        when 6 => byte_out <= moisture_in(byte_width_g-1 downto 0);
+                    end case;
+                    curr_state_r <= wait_busy_high;
                 end if;
 
-            when temp_lsb =>
-                start_out <= '0';
-                if(busy_in = '0') then
-                    start_out <= '1';
-                    byte_out <= temperature_in(byte_width_g-1 downto 0);
-                    curr_state_r <= hum_msb;
+            --Wait that uart_tx has taken the byte
+            when wait_busy_high =>
+                if(busy_in = '1') then
+                    curr_state_r <= wait_busy_low;
                 end if;
 
-            when hum_msb =>
-                start_out <= '0';
+            --Wait for sent byte
+            when wait_busy_low =>
                 if(busy_in = '0') then
-                    start_out <= '1';
-                    byte_out <= humidity_in(2*byte_width_g-1 downto byte_width_g);
-                    curr_state_r <= hum_lsb;
-                end if;
-
-            when hum_lsb =>
-                start_out <= '0';
-                if(busy_in = '0') then
-                    start_out <= '1';
-                    byte_out <= humidity_in(byte_width_g-1 downto 0);
-                    curr_state_r <= moist_msb;
-                end if;
-
-            when moist_msb =>
-                start_out <= '0';
-                if(busy_in = '0') then
-                    start_out <= '1';
-                    byte_out <= moisture_in(2*byte_width_g-1 downto byte_width_g);
-                    curr_state_r <= moist_lsb;
-                end if;
-
-            when moist_lsb =>
-                start_out <= '0';
-                if(busy_in = '0') then
-                    start_out <= '1';
-                    byte_out <= moisture_in(byte_width_g-1 downto 0);
-                    curr_state_r <= idle;
+                    if(byte_idx_r = 6) then
+                        curr_state_r <= idle;
+                    else
+                        byte_idx_r   <= byte_idx_r + 1;
+                        curr_state_r <= send_byte;
+                    end if;
                 end if;
             end case;
         end if;

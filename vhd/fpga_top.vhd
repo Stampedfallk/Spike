@@ -4,7 +4,7 @@
 -------------------------------------------------------------------------------
 -- File       : fpga_top.vhd
 -- Author     : Jere Nissinen
--- Edited     : 20.10.2026
+-- Edited     : 27.10.2026
 -------------------------------------------------------------------------------
 -- Description: Top module for the fpga implementation. Connects with physical io ports of the development board.
 -------------------------------------------------------------------------------
@@ -17,7 +17,8 @@ entity fpga_top is
         sclk_freq_g    : integer := 1000000;
         ref_clk_freq_g : integer := 125000000;
         i2c_freq_g     : integer := 100000;
-        num_buttons_g  : integer := 3
+        baud_rate_g    : integer := 115200;
+        num_buttons_g  : integer := 4
     );
 
     port(
@@ -32,12 +33,22 @@ entity fpga_top is
 
         -- Pmod JB - I2C
         i2c_sdat_inout : inout std_logic;
-        i2c_sclk_out   : out std_logic
+        i2c_sclk_out   : out   std_logic;
+
+        -- Uart port
+        tx_out : out std_logic
     );
 end fpga_top;
 
 
 architecture structural of fpga_top is
+
+    -- Number of sensor controllers (sized for the i2c arbitter in sensor_interface_top)
+    constant num_sensors_c : integer := 3;
+
+    -- Button -> triggers
+    signal trigger  : std_logic;
+    signal triggers : std_logic_vector(num_sensors_c-1 downto 0);
 
     -- Sensor interface -> I2C master
     signal start          : std_logic;
@@ -55,13 +66,33 @@ architecture structural of fpga_top is
     signal humidity    : std_logic_vector(2*byte_width_g-1 downto 0);
     signal temperature : std_logic_vector(2*byte_width_g-1 downto 0);
 
-    --Make the signals readable for early fpga debug
+    -- Make the signals readable for early fpga debug
     attribute mark_debug : string;
 
-    attribute mark_debug of light : signal is "true";
-    attribute mark_debug of moisture : signal is "true";
-    attribute mark_debug of humidity : signal is "true";
+    attribute mark_debug of light       : signal is "true";
+    attribute mark_debug of moisture    : signal is "true";
+    attribute mark_debug of humidity    : signal is "true";
     attribute mark_debug of temperature : signal is "true";
+
+    -- uart tx -> streamer
+    signal busy : std_logic;
+
+    -- streamer -> uart tx
+    signal uart_start : std_logic;
+    signal byte_to_tx : std_logic_vector(byte_width_g-1 downto 0);
+
+
+    component button_pulse is
+        generic(
+            ref_clk_freq_g : integer := 125000000;
+            debounce_ms_g  : integer := 10
+        );
+        port(
+            clk, rst_n : in std_logic;
+            button_in  : in std_logic;
+            pulse_out  : out std_logic
+        );
+    end component;
 
 
     component sensor_interface_top is
@@ -116,19 +147,68 @@ architecture structural of fpga_top is
         );
     end component;
 
+
+    component uart_tx is
+        generic(
+            ref_clk_freq_g : integer := 125000000;
+            baud_rate_g    : integer := 115200;
+            byte_width_g   : integer := 8
+        );
+        port(
+            clk, rst_n : in std_logic;
+            start_in   : in std_logic;
+            data_in    : in std_logic_vector(byte_width_g-1 downto 0);
+            tx_out     : out std_logic;
+            busy_out   : out std_logic
+        );
+    end component;
+
+
+    component uart_streamer is
+        generic(
+            byte_width_g : integer := 8
+        );
+        port(
+            clk, rst_n              : in std_logic;
+            trigger_transmittion_in : in std_logic;
+            busy_in                 : in std_logic;
+            light_in                : in std_logic_vector(byte_width_g-1 downto 0);
+            temperature_in          : in std_logic_vector(2*byte_width_g-1 downto 0);
+            humidity_in             : in std_logic_vector(2*byte_width_g-1 downto 0);
+            moisture_in             : in std_logic_vector(2*byte_width_g-1 downto 0);
+            start_out               : out std_logic;
+            byte_out                : out std_logic_vector(byte_width_g-1 downto 0)
+        );
+    end component;
+
 begin
+
+    -- The fourth button triggers all measurements and the uart transmission
+    triggers <= (others => trigger);
+
+    button_pulse_inst : button_pulse
+        generic map(
+            ref_clk_freq_g => ref_clk_freq_g
+        )
+        port map(
+            clk       => clk,
+            rst_n     => rst_n,
+            button_in => buttons_in(3),
+            pulse_out => trigger
+        );
+
 
     sensor_interface_inst : sensor_interface_top
         generic map(
             byte_width_g   => byte_width_g,
             sclk_freq_g    => sclk_freq_g,
             ref_clk_freq_g => ref_clk_freq_g,
-            num_buttons_g  => num_buttons_g
+            num_buttons_g  => num_sensors_c
         )
         port map(
             clk                     => clk,
             rst_n                   => rst_n,
-            buttons_in              => buttons_in,
+            buttons_in              => triggers,
 
             -- ALS
             sdat_in                 => als_sdat_in,
@@ -172,6 +252,40 @@ begin
             -- Physical I2C bus
             sdat_inout    => i2c_sdat_inout,
             sclk_out      => i2c_sclk_out
+        );
+
+
+    uart_streamer_inst : uart_streamer
+        generic map(
+            byte_width_g => byte_width_g
+        )
+        port map(
+            clk                     => clk,
+            rst_n                   => rst_n,
+            trigger_transmittion_in => trigger,
+            busy_in                 => busy,
+            light_in                => light,
+            temperature_in          => temperature,
+            humidity_in             => humidity,
+            moisture_in             => moisture,
+            start_out               => uart_start,
+            byte_out                => byte_to_tx
+        );
+
+
+    uart_tx_inst : uart_tx
+        generic map(
+            ref_clk_freq_g => ref_clk_freq_g,
+            baud_rate_g    => baud_rate_g,
+            byte_width_g   => byte_width_g
+        )
+        port map(
+            clk      => clk,
+            rst_n    => rst_n,
+            start_in => uart_start,
+            data_in  => byte_to_tx,
+            tx_out   => tx_out,
+            busy_out => busy
         );
 
 end structural;
