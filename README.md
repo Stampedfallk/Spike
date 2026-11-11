@@ -7,7 +7,7 @@ This file contains the following information about this project
 - IP Blocks
 - Interfaces
 - Design flow
-- Improvement
+- Improvements
 
 ## 1. Overview
 All in all this project might just be a excuse to buy more houseplants The idea of this system
@@ -24,9 +24,9 @@ My intention is to use this system mainly with cacti, but it is possible to use 
 
 ## 2. Status
 
-# 3.11:
+### 4.11:
 Currently the sensor interface is fully operational. I can read data from all the sensors and inspect them through Vivado ILA.
-UART should now be functional. I studied how I could get it working and I found out it would require a lot of work to use the uart through the processor on chip. I need an UART to USB bridge to validate my design and will look to obtain one shortly.
+UART to USB bridge has been ordered. Further testing will be done on arrival
 
 ## 3. IP Blocks
 
@@ -36,8 +36,10 @@ UART should now be functional. I studied how I could get it working and I found 
 
 ### Project approach
 
+### Development and simulation
+
 ### Coding and simulation
 
-## 6. Improvement
+## 6. Improvements
 
 ... WORK IN PROGRESS ...

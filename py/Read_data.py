@@ -1,10 +1,21 @@
+'''
+-------------------------------------------------------------------------------
+-- Title      : Read data
+-- Project    : Spike
+-------------------------------------------------------------------------------
+-- File       : Read_data.py
+-- Author     : Jere Nissinen
+-- Edited     : 11.11.2026
+-------------------------------------------------------------------------------
+-- Description: Python script for reading data from the fpga through com-port.
+-------------------------------------------------------------------------------
+'''
 import serial
 import struct
 import time
 
-
 # SETTINGS: Change the COM-gate to match your own port
-SERIAL_PORT = 'COM3' 
+SERIAL_PORT = 'COM5' 
 BAUD_RATE = 115200
 
 def main():
@@ -27,14 +38,14 @@ def main():
                     # 'B' = 8-bit unsigned char (1 byte)
                     # 'H' = 16-bit unsigned short (2 bytes)
                     # '>' = big-endian
-                    moisture, humidity, light, temperature = struct.unpack('>HHBH', raw_data)
+                    light, temperature, humidity, moisture = struct.unpack('>BHHH', raw_data)
                     
                     # Print data
                     print(f"--- Sensor data [{time.strftime('%X')}] ---")
                     print(f" Moisture:    {moisture}")
-                    print(f" Humidity: {humidity}")
+                    print(f" Humidity: {humidity * 100 / 65536}")
                     print(f" Light:       {light}")
-                    print(f" Temperature: {temperature}")
+                    print(f" Temperature: {temperature * 165 / 65536 - 40} C")
                     print("-" * 30 + "\n")
                     
                 time.sleep(0.1)

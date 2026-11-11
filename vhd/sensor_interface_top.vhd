@@ -252,10 +252,7 @@ begin
         );
 
 
-    process(permissions, 
-            hygro_config_start, hygro_config_end, hygro_config_byte, 
-            hygro_read_start, hygro_read_end, hygro_read_byte, 
-            stemma_read_start, stemma_read_end, stemma_read_byte)
+    process(all)
     begin
         start          <= '0';
         end_trans      <= '0';

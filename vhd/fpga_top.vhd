@@ -4,7 +4,7 @@
 -------------------------------------------------------------------------------
 -- File       : fpga_top.vhd
 -- Author     : Jere Nissinen
--- Edited     : 27.10.2026
+-- Edited     : 4.11.2026
 -------------------------------------------------------------------------------
 -- Description: Top module for the fpga implementation. Connects with physical io ports of the development board.
 -------------------------------------------------------------------------------
@@ -50,6 +50,11 @@ architecture structural of fpga_top is
     signal trigger  : std_logic;
     signal triggers : std_logic_vector(num_sensors_c-1 downto 0);
 
+    -- Sensor button synchronization
+    signal sens_sync_a_r : std_logic_vector(num_sensors_c-1 downto 0);
+    signal sens_sync_b_r : std_logic_vector(num_sensors_c-1 downto 0);
+    signal sens_prev_r   : std_logic_vector(num_sensors_c-1 downto 0);
+
     -- Sensor interface -> I2C master
     signal start          : std_logic;
     signal end_trans      : std_logic;
@@ -81,19 +86,8 @@ architecture structural of fpga_top is
     signal uart_start : std_logic;
     signal byte_to_tx : std_logic_vector(byte_width_g-1 downto 0);
 
-
-    component button_pulse is
-        generic(
-            ref_clk_freq_g : integer := 125000000;
-            debounce_ms_g  : integer := 10
-        );
-        port(
-            clk, rst_n : in std_logic;
-            button_in  : in std_logic;
-            pulse_out  : out std_logic
-        );
-    end component;
-
+    -- Button synchronization
+    signal btn_sync_r : std_logic_vector(2 downto 0);
 
     component sensor_interface_top is
         generic(
@@ -183,20 +177,33 @@ architecture structural of fpga_top is
 
 begin
 
-    -- The fourth button triggers all measurements and the uart transmission
-    triggers <= (others => trigger);
+    -- button synchronization
+    btn_process : process(clk, rst_n)
+    begin
+        if(rst_n = '0') then
+            btn_sync_r <= (others => '0');
+        elsif(clk'event and clk = '1') then
+            btn_sync_r <= btn_sync_r(1 downto 0) & buttons_in(3);
+        end if;
+    end process btn_process;
 
-    button_pulse_inst : button_pulse
-        generic map(
-            ref_clk_freq_g => ref_clk_freq_g
-        )
-        port map(
-            clk       => clk,
-            rst_n     => rst_n,
-            button_in => buttons_in(3),
-            pulse_out => trigger
-        );
+    -- Sensor button synchronization and edge detection (BTN0..BTN2)
+    sensor_btn_process : process(clk, rst_n)
+    begin
+        if(rst_n = '0') then
+            sens_sync_a_r <= (others => '0');
+            sens_sync_b_r <= (others => '0');
+            sens_prev_r   <= (others => '0');
+        elsif(clk'event and clk = '1') then
+            sens_sync_a_r <= buttons_in(num_sensors_c-1 downto 0);
+            sens_sync_b_r <= sens_sync_a_r;
+            sens_prev_r   <= sens_sync_b_r;
+        end if;
+    end process sensor_btn_process;
 
+    triggers <= sens_sync_b_r and not sens_prev_r;   -- one clock cycle per press
+
+    trigger <= btn_sync_r(1) and not btn_sync_r(2);
 
     sensor_interface_inst : sensor_interface_top
         generic map(
