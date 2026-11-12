@@ -40,11 +40,11 @@ The project is fully operational. It can read light, temperature, humidity, and 
 ## 4. System view
 The top hierarchical level of this system is the fpga-top, which describes the top most blocks of the system. It contains the I2C_master module, sensor-interface module, and the uart module.
 
-![Diagram](../Spike/Documentation/System_block_diagram.png)
+![Diagram](Documentation/System_block_diagram.png)
 
 The most interesting block in this is the sensor interface module. This module contains the controllers for all the sensors and other blocks that are required to make this system work.
 
-![Diagram](../Spike/Documentation/Sensor_interface_block_diagram.png)
+![Diagram](Documentation/Sensor_interface_block_diagram.png)
 
 Further information about the IP blocks can found in their VHDL and testbench files.
 
