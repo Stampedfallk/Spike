@@ -11,4 +11,10 @@
 #Keep VHDL sources
 !/vhd/
 
+#Keep constraints
+!/constraints/
+
+#Keep documentation files
+!/documentation/
+
 __pycache__/
